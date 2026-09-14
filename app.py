@@ -1,8 +1,8 @@
 
 import streamlit as st
 from pathlib import Path
-from datetime import date
-import base64, io, json, re, tempfile, os, requests
+import base64, io, json, os, re, tempfile, requests
+from html import unescape
 from PIL import Image
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -11,95 +11,84 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.dml.color import RGBColor
 
 ROOT = Path(__file__).parent
-BG = ROOT / "assets" / "slidecraft_background.png"
+BG_PATH = ROOT / "assets" / "slidecraft_background.png"
 
 st.set_page_config(
     page_title="SlideCraft-by-Ajelle",
-    page_icon="✨",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-def data_uri(path):
+# =========================================================
+# INTERFACE
+# =========================================================
+def bg_uri(path):
     if not path.exists():
         return ""
     return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
 
-bg = data_uri(BG)
+BG = bg_uri(BG_PATH)
 
 st.markdown(f"""
 <style>
 :root {{
-  --purple:#6f25b5;
-  --purple2:#9630df;
-  --purpleDark:#47106f;
-  --purpleSoft:#f7f1fc;
-  --ink:#25192f;
-  --muted:#6e6179;
-  --border:#c9a8ea;
+  --purple:#6e24b5;
+  --purple2:#9330d9;
+  --dark:#48116e;
+  --ink:#25182e;
+  --muted:#6d6077;
+  --border:#c6a5e8;
+  --soft:#f8f3fc;
 }}
 .stApp {{
   background:
-    linear-gradient(rgba(35,10,66,.22), rgba(19,29,82,.22)),
-    url("{bg}") center/cover fixed;
+    linear-gradient(rgba(31,9,60,.23),rgba(14,30,83,.22)),
+    url("{BG}") center/cover fixed;
 }}
 .block-container {{
-  max-width: 1250px;
-  padding-top: 1.2rem;
-  padding-bottom: 4rem;
+  max-width:1240px;
+  padding-top:1.25rem;
+  padding-bottom:4rem;
 }}
 #MainMenu, footer {{visibility:hidden}}
-
 .hero {{
-  background: rgba(255,255,255,.96);
-  border: 1px solid #dfcff0;
-  border-radius: 26px;
-  padding: 28px 34px;
-  box-shadow: 0 18px 50px rgba(30,8,60,.22);
-  margin-bottom: 18px;
+  background:rgba(255,255,255,.96);
+  border:1px solid #dfcff0;
+  border-radius:26px;
+  padding:27px 34px;
+  box-shadow:0 18px 50px rgba(31,8,60,.21);
+  margin-bottom:18px;
 }}
 .hero h1 {{
   margin:0;
-  color:var(--purpleDark);
-  font-size:2.55rem;
-  letter-spacing:-.03em;
+  color:var(--dark);
+  font-size:2.45rem;
 }}
 .hero p {{
-  color:#594c64;
-  font-size:1.04rem;
+  color:#5c4d67;
   line-height:1.55;
   margin:.65rem 0 0;
 }}
-.pill {{
+.mode-note {{
   display:inline-block;
-  margin-top:14px;
+  margin-top:13px;
   padding:8px 14px;
   border-radius:999px;
-  background:linear-gradient(135deg,var(--purple),var(--purple2));
   color:white;
-  font-weight:800;
-  font-size:.8rem;
-  letter-spacing:.08em;
-}}
-
-div[data-testid="stForm"] {{
-  background:rgba(255,255,255,.97);
-  border:1px solid #e4d5f3;
-  border-radius:26px;
-  padding:26px 28px 32px;
-  box-shadow:0 18px 55px rgba(31,8,60,.22);
+  font-weight:750;
+  background:linear-gradient(135deg,var(--purple),var(--purple2));
 }}
 .section {{
-  background:#fbf8ff;
-  border:1px solid #e8daf6;
+  background:#fbf9fe;
+  border:1px solid #e8daf5;
   border-left:5px solid var(--purple);
   border-radius:16px;
-  padding:15px 18px;
-  margin:13px 0 15px;
+  padding:14px 18px;
+  margin:14px 0 15px;
 }}
 .section b {{
-  color:#541484;
-  font-size:1.20rem;
+  color:#52117e;
+  font-size:1.18rem;
 }}
 .section span {{
   display:block;
@@ -107,92 +96,80 @@ div[data-testid="stForm"] {{
   margin-top:3px;
   font-size:.94rem;
 }}
-.note {{
-  background:#f6effd;
-  border-radius:12px;
-  padding:10px 14px;
-  color:#513664;
-  margin-bottom:12px;
+div[data-testid="stForm"] {{
+  background:rgba(255,255,255,.97);
+  border:1px solid #e4d5f3;
+  border-radius:25px;
+  padding:25px 28px 32px;
+  box-shadow:0 18px 55px rgba(31,8,60,.21);
 }}
-
 div[data-testid="stWidgetLabel"] p {{
   color:#321943!important;
   font-weight:750!important;
-  font-size:.97rem!important;
 }}
-
-.stTextInput input,
-.stTextArea textarea,
-.stNumberInput input,
-.stDateInput input {{
+.stTextInput input,.stTextArea textarea,.stNumberInput input {{
   background:#fff!important;
   color:#24182e!important;
   -webkit-text-fill-color:#24182e!important;
   border:1.5px solid var(--border)!important;
-  border-radius:12px!important;
+  border-radius:11px!important;
 }}
-.stTextInput input::placeholder,
-.stTextArea textarea::placeholder,
-.stNumberInput input::placeholder {{
-  color:#85748f!important;
+.stTextInput input::placeholder,.stTextArea textarea::placeholder {{
+  color:#87758f!important;
   opacity:1!important;
 }}
-
 div[data-baseweb="select"],
 div[data-baseweb="select"] > div,
 div[data-baseweb="select"] div,
-div[data-baseweb="base-input"],
-div[data-baseweb="input"] > div {{
-  background-color:#ffffff!important;
+div[data-baseweb="input"] > div,
+div[data-baseweb="base-input"] {{
+  background:#fff!important;
   color:#24182e!important;
 }}
 div[data-baseweb="select"] > div {{
   border:1.5px solid var(--border)!important;
-  border-radius:12px!important;
+  border-radius:11px!important;
 }}
 div[data-baseweb="select"] span,
-div[data-baseweb="select"] svg {{
+div[data-baseweb="select"] * {{
   color:#24182e!important;
-  fill:#5f2b7b!important;
+  -webkit-text-fill-color:#24182e!important;
 }}
+[role="listbox"],[role="option"],
 div[data-baseweb="popover"] ul,
-div[data-baseweb="popover"] li,
-[role="listbox"],
-[role="option"] {{
-  background:#ffffff!important;
+div[data-baseweb="popover"] li {{
+  background:#fff!important;
   color:#24182e!important;
 }}
 [role="option"]:hover {{
   background:#f3e9fb!important;
 }}
-
-div[data-testid="stFileUploader"] {{
-  background:#fbf8ff;
-  border:1.5px dashed #ab79d7;
-  border-radius:15px;
-  padding:5px;
+div[data-testid="stFileUploaderDropzone"] {{
+  background:#fff!important;
+  border:1.5px dashed #9b5bd2!important;
+  border-radius:14px!important;
 }}
-div[data-testid="stFileUploader"] * {{
-  color:#342044!important;
+div[data-testid="stFileUploaderDropzone"] *,
+div[data-testid="stFileUploader"] button {{
+  color:#4f1c70!important;
+  -webkit-text-fill-color:#4f1c70!important;
 }}
-.stCheckbox label span,
-.stRadio label span {{
+div[data-testid="stFileUploader"] button {{
+  background:#f3e9fb!important;
+  border:1px solid #b47cdd!important;
+}}
+.stRadio label span,.stCheckbox label span {{
   color:#352047!important;
 }}
-
-.stButton>button,
-.stDownloadButton>button {{
+.stButton>button,.stDownloadButton>button {{
   width:100%;
-  min-height:54px;
+  min-height:53px;
   border:0!important;
-  border-radius:14px!important;
+  border-radius:13px!important;
   background:linear-gradient(135deg,var(--purple),var(--purple2))!important;
   color:#fff!important;
   font-weight:800!important;
-  font-size:1rem!important;
-  box-shadow:0 10px 24px rgba(101,28,173,.23);
 }}
-
 section[data-testid="stSidebar"] {{
   background:rgba(251,248,255,.97);
   border-right:1px solid #e3d2f3;
@@ -200,44 +177,56 @@ section[data-testid="stSidebar"] {{
 section[data-testid="stSidebar"] * {{
   color:#351c4d!important;
 }}
-@media(max-width:900px) {{
-  .hero h1 {{font-size:2rem}}
-  div[data-testid="stForm"] {{padding:18px}}
+.tip {{
+  background:#f7f0fc;
+  border-radius:13px;
+  padding:11px 14px;
+  color:#543667;
+  margin-bottom:12px;
 }}
 </style>
 """, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("## ✨ SlideCraft")
+    st.markdown("## SlideCraft")
     st.caption("by Ajelle")
     st.markdown("---")
-    st.markdown("### Generate PPT")
-    st.write("Build an editable teacher visual aid from a few lesson details.")
+    st.markdown("### Two generator modes")
+    st.write("Full Lesson to PPT")
+    st.write("Quiz to PPT Only")
     st.markdown("---")
-    st.markdown("### How it works")
-    st.write("Required fields give the lesson context.")
-    st.write("Optional blanks are completed automatically by AI.")
-    st.write("Uploaded curriculum materials become the strongest alignment reference.")
+    st.markdown("### Readability")
+    st.write("Lesson slides never go below 45 pt.")
+    st.write("Quiz slides start at 45 pt and shrink only when one long item must fit on a single slide.")
     st.markdown("---")
-    st.caption("Teach • Create • Inspire")
+    st.caption("Simple inputs. Teacher-ready output.")
 
 st.markdown("""
 <div class="hero">
 <h1>SlideCraft-by-Ajelle</h1>
-<p>Create a complete teacher-ready visual aid—not just an outline. SlideCraft can generate
-explanations, key concepts, examples, guided practice, student activities, processing questions,
-assessment, answer key, assignment, summary, and closing slides.</p>
-<div class="pill">TEACH ✦ CREATE ✦ INSPIRE</div>
+<p>Create either a complete lesson presentation or a quiz-only PowerPoint.
+The generator keeps the structure simple, uses teacher-provided content and references,
+and arranges the slides so the text stays readable.</p>
+<div class="mode-note">Choose your generator mode below</div>
 </div>
 """, unsafe_allow_html=True)
 
-def section(n, title, helptext):
+mode = st.radio(
+    "What would you like to create?",
+    ["Full Lesson to PPT", "Quiz to PPT Only"],
+    horizontal=True
+)
+
+def section(n, title, note):
     st.markdown(
-        f'<div class="section"><b>{n}. {title}</b><span>{helptext}</span></div>',
+        f'<div class="section"><b>{n}. {title}</b><span>{note}</span></div>',
         unsafe_allow_html=True
     )
 
-def read_upload(upload):
+# =========================================================
+# REFERENCES
+# =========================================================
+def read_uploaded_file(upload):
     if upload is None:
         return ""
     raw = upload.read()
@@ -250,17 +239,17 @@ def read_upload(upload):
             return "\n".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(raw)).pages)
         if name.endswith(".docx"):
             from docx import Document
-            d = Document(io.BytesIO(raw))
-            parts = [p.text.strip() for p in d.paragraphs if p.text.strip()]
-            for table in d.tables:
+            doc = Document(io.BytesIO(raw))
+            parts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
                 for row in table.rows:
                     vals = [c.text.strip() for c in row.cells if c.text.strip()]
                     if vals:
                         parts.append(" | ".join(vals))
             return "\n".join(parts)
         if name.endswith(".pptx"):
-            from pptx import Presentation as PPTReader
-            prs = PPTReader(io.BytesIO(raw))
+            from pptx import Presentation as PptReader
+            prs = PptReader(io.BytesIO(raw))
             parts = []
             for slide in prs.slides:
                 for shape in slide.shapes:
@@ -271,240 +260,281 @@ def read_upload(upload):
         return ""
     return ""
 
-def get_api_key():
+def fetch_link_text(url):
     try:
-        return st.secrets.get("GEMINI_API_KEY", "")
+        r = requests.get(
+            url,
+            timeout=20,
+            headers={"User-Agent":"Mozilla/5.0"}
+        )
+        r.raise_for_status()
+        ctype = r.headers.get("content-type","").lower()
+        if "text/html" not in ctype:
+            return f"Reference link: {url}"
+        text = re.sub(r"(?is)<script.*?>.*?</script>", " ", r.text)
+        text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
+        text = re.sub(r"(?s)<[^>]+>", " ", text)
+        text = unescape(text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:10000]
+    except Exception:
+        return f"Reference link: {url}"
+
+def collect_references(files, links_text):
+    parts = []
+    for f in files or []:
+        txt = read_uploaded_file(f)
+        if txt:
+            parts.append(f"FILE: {f.name}\n{txt[:12000]}")
+    for line in links_text.splitlines():
+        url = line.strip()
+        if url.startswith("http://") or url.startswith("https://"):
+            parts.append(f"LINK: {url}\n{fetch_link_text(url)}")
+    return "\n\n".join(parts)[:30000]
+
+# =========================================================
+# GEMINI
+# =========================================================
+def api_key():
+    try:
+        return st.secrets.get("GEMINI_API_KEY","")
     except Exception:
         return ""
 
-SLIDE_GUIDE = [
-    ("Lesson Title", "Topic/title, subject, grade level, teacher name, date"),
-    ("Learning Objectives", "3 clear objectives"),
-    ("Learning Competency", "Required curriculum competency or generated equivalent"),
-    ("Review / Recall", "Previous lesson review or 2–3 recall questions"),
-    ("Motivation / Engage", "Opening activity, picture prompt, scenario, question, quotation, or challenge"),
-    ("Lesson Introduction", "What the lesson is about and why it matters"),
-    ("Key Concept 1", "Major idea with explanation, terms, and example"),
-    ("Key Concept 2", "Second major idea with explanation and example"),
-    ("Key Concept 3", "Third major idea or supporting information"),
-    ("Example / Application", "Real-life or worked example / demonstration"),
-    ("Guided Practice", "Teacher-guided activity with clear instructions"),
-    ("Student Activity", "Individual, pair, or group application task"),
-    ("Processing Questions", "2–4 reflection/explanation questions"),
-    ("Generalization", "Main takeaway / what have we learned"),
-    ("Values / Real-Life Connection", "Everyday life, values, responsibility, practical use"),
-    ("Assessment", "Actual quiz/items"),
-    ("Answer Key", "Correct answers"),
-    ("Assignment / Enrichment", "Homework or enrichment"),
-    ("Lesson Summary", "Very short recap"),
-    ("Closing Slide", "Closing message or reflection prompt"),
-]
+def choose_models(key):
+    try:
+        r = requests.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={key}",
+            timeout=30
+        )
+        r.raise_for_status()
+        models = []
+        for item in r.json().get("models",[]):
+            if "generateContent" in item.get("supportedGenerationMethods",[]):
+                name = item.get("name","").replace("models/","")
+                if name:
+                    models.append(name)
+        models.sort(key=lambda x:(0 if "flash" in x.lower() else 1,
+                                  0 if "2.5" in x.lower() else 1,x))
+        return models
+    except Exception:
+        return ["gemini-2.5-flash","gemini-2.0-flash","gemini-1.5-flash"]
 
-def target_sections(slide_count):
-    names = [x[0] for x in SLIDE_GUIDE]
-    if slide_count >= 20:
-        return names[:20]
-    if slide_count == 15:
-        return [
-            "Lesson Title", "Learning Objectives + Competency", "Review / Recall",
-            "Motivation / Engage", "Lesson Introduction", "Key Concept 1",
-            "Key Concept 2", "Key Concept 3 + Example / Application",
-            "Guided Practice", "Student Activity", "Processing Questions",
-            "Generalization + Values / Real-Life Connection",
-            "Assessment", "Answer Key", "Assignment + Lesson Summary + Closing"
-        ]
-    if slide_count == 10:
-        return [
-            "Lesson Title", "Objectives + Competency", "Review + Motivation",
-            "Lesson Introduction", "Key Concepts 1–2", "Key Concept 3 + Application",
-            "Guided Practice + Student Activity", "Processing + Generalization + Values",
-            "Assessment + Answer Key", "Assignment + Summary + Closing"
-        ]
-    # custom
-    return names[:min(slide_count, 20)] + [f"Extended Learning {i+1}" for i in range(max(0, slide_count-20))]
+def call_gemini(key, prompt):
+    body = {
+        "contents":[{"parts":[{"text":prompt}]}],
+        "generationConfig":{"temperature":0.28,"responseMimeType":"application/json"}
+    }
+    errs = []
+    for model in choose_models(key)[:8]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+            r = requests.post(url,json=body,timeout=120)
+            if not r.ok:
+                errs.append(f"{model}:{r.status_code}")
+                continue
+            text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(text)
+        except Exception as e:
+            errs.append(f"{model}:{type(e).__name__}")
+    raise RuntimeError("Gemini generation failed: " + " | ".join(errs[:4]))
 
-def ai_plan(key, payload):
-    sections = target_sections(payload["slide_count"])
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={key}"
-
+# =========================================================
+# LESSON GENERATION
+# =========================================================
+def lesson_ai_plan(key, data):
     prompt = f"""
-You are an expert classroom teacher, curriculum specialist, assessment writer,
-and instructional PowerPoint designer.
+You are an expert teacher and PowerPoint instructional designer.
 
-Your task is to create a COMPLETE TEACHER VISUAL AID, not a bare outline.
+Create a COMPLETE teacher-ready lesson visual aid.
 
-PRIORITY OF SOURCES
-1. Uploaded Curriculum Map / Unit Plan / Lesson Plan / reference materials are the strongest alignment sources.
-2. Teacher-entered lesson topic and content must be accurately taught.
-3. If optional fields are blank, generate them intelligently from the topic, grade, subject, duration, and uploads.
-4. Never invent claims about an uploaded source. Only derive what is supported.
+INPUT PRIORITY
+1. Teacher's lesson content/knowledge is mandatory source material when provided.
+2. Uploaded teaching resources and reference links should be used for alignment.
+3. Learning competency and objectives guide the lesson.
+4. Do not omit teacher-provided information.
+5. If the preferred slide count is not enough to include all content legibly,
+   ADD more slides. Never remove important teacher-provided content.
 
-TEACHER-READY CONTENT RULES
-- Explain concepts in content that a teacher can actually display and discuss.
-- Key concept slides must contain clear explanations, important terms, and examples.
-- Avoid vague bullets such as "Discuss the topic" or "Explain the concept."
-- Write the actual explanation, example, question, instruction, or problem.
-- Include teacher-useful examples and age-appropriate language.
-- Include actual guided practice tasks and actual student activity instructions.
-- Include actual processing questions.
-- Include an actual assessment with the requested number/type of items.
-- Include a separate answer key.
-- Add an assignment/enrichment task.
-- Add a short lesson summary.
-- Include a values/real-life connection only when meaningful.
-- Follow the chosen strategy while still covering the slide guide.
-- Respect the lesson duration; activities should be realistic within the available time.
+READABILITY
+- Times New Roman only in the final PPT.
+- Lesson slide text must NEVER be below 45 pt.
+- Keep 2–3 concise content blocks/bullets per slide.
+- Split dense explanations across continuation slides.
+- Do not create long paragraphs.
+- Every slide must fit completely inside the presentation.
+- Use descriptive slide titles.
+- No icons.
 
-POWERPOINT READABILITY
-- Times New Roman only.
-- Minimum 48 pt.
-- Keep each slide concise enough to remain readable.
-- If content is too much, use more slides or shorter bullets rather than reducing font.
-- Prefer 2–4 substantial but concise bullets per slide.
-- Use short paragraphs only when an explanation truly needs them.
-- Visual suggestions should support the topic, not be decorative.
+LESSON STRUCTURE
+Build a logical sequence such as:
+Lesson Title
+Learning Objectives
+Learning Competency
+Review / Recall
+Motivation / Engage
+Lesson Introduction
+Key Concepts and explanations
+Examples / Applications
+Guided Practice
+Student Activity
+Processing Questions
+Generalization
+Real-Life / Values Connection when appropriate
+Assessment
+Closing / Summary
 
-TARGET NUMBER OF SLIDES: {payload["slide_count"]}
-TARGET SLIDE STRUCTURE:
-{json.dumps(sections, ensure_ascii=False)}
+CONTENT QUALITY
+- Key concept slides must contain ACTUAL explanations a teacher can use as a visual aid.
+- Include important terms and examples.
+- Guided practice must contain actual tasks/instructions.
+- Student activity must contain actual instructions.
+- Assessment must contain ACTUAL items.
 
-FULL 20-SLIDE GUIDE FOR REFERENCE:
-{json.dumps(SLIDE_GUIDE, ensure_ascii=False)}
+ASSESSMENT
+For each assessment item:
+- Put ONE item on ONE slide.
+- Left-align everything.
+- For multiple choice, include number, complete question, and all choices.
+- Put the correct answer ONLY in "answer_note", not in visible slide content.
+- Do not make a visible answer-key slide unless specifically requested.
+- Keep assessment item content self-contained.
+
+PREFERRED SLIDE COUNT: {data["preferred_slide_count"]}
+This is a preferred count, not a hard maximum. Add slides if necessary for readability or completeness.
 
 Return ONLY valid JSON:
 {{
-  "alignment_summary": {{
-    "source": "Uploaded Materials|Teacher Inputs|Combined",
-    "competency": "string",
-    "objectives": ["string","string","string"],
-    "strategy": "string"
-  }},
-  "slides": [
+  "slides":[
     {{
-      "title": "string",
-      "purpose": "string",
-      "bullets": ["actual teacher-ready content"],
-      "teacher_note": "brief optional teaching cue",
-      "visual_query": "specific useful visual search phrase or empty string",
-      "is_cover": false
+      "title":"string",
+      "kind":"cover|content|activity|assessment|closing",
+      "bullets":["actual visible content"],
+      "question":"assessment question or empty",
+      "choices":["A. ...","B. ...","C. ...","D. ..."],
+      "answer_note":"correct answer and short teacher note, or empty",
+      "visual_query":"specific useful visual query or empty"
     }}
   ]
 }}
 
-Teacher inputs:
-{json.dumps(payload, ensure_ascii=False)}
+LESSON DATA:
+{json.dumps(data, ensure_ascii=False)}
 """
+    return call_gemini(key, prompt)
 
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.30, "responseMimeType": "application/json"},
-    }
-    r = requests.post(url, json=body, timeout=120)
-    r.raise_for_status()
-    return json.loads(r.json()["candidates"][0]["content"]["parts"][0]["text"])
-
-def fallback_plan(payload):
-    t = payload["topic"]
-    competency = payload["competency"] or f"Demonstrate understanding of the major concepts and applications of {t}."
-    objectives = payload["objectives"] or [
-        f"Explain the main concepts of {t}.",
-        f"Apply the lesson through a guided or collaborative task.",
-        f"Demonstrate understanding through a short assessment.",
+def lesson_fallback(data):
+    topic = data["title"]
+    comp = data["competency"] or f"Demonstrate understanding of the important concepts related to {topic}."
+    objectives = data["objectives"] or [
+        f"Explain the major ideas of {topic}.",
+        f"Apply the lesson through guided and independent tasks.",
+        f"Demonstrate understanding through a short assessment."
     ]
-    previous = payload["previous_lesson"] or "Recall the most important idea from the previous lesson and connect it to today's topic."
-    content = payload["lesson_content"] or f"Core concepts and examples related to {t}."
+    content = data["content"] or f"Teacher-provided or reference-based information about {topic}."
 
     slides = [
-        {"title": t, "purpose":"Lesson Title", "bullets":[], "teacher_note":"","visual_query":t, "is_cover":True},
-        {"title":"Learning Objectives", "purpose":"Objectives", "bullets":objectives[:3], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Learning Competency", "purpose":"Competency", "bullets":[competency], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Review / Recall", "purpose":"Review", "bullets":[previous, f"What prior idea can help us understand {t}?", "Share one connection with a partner."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Motivation / Engage", "purpose":"Engage", "bullets":[f"Observe or imagine a real situation related to {t}.", "What do you notice?", "Why might this matter in real life?"], "teacher_note":"","visual_query":t, "is_cover":False},
-        {"title":"Lesson Introduction", "purpose":"Introduction", "bullets":[f"Today's lesson focuses on {t}.", "We will connect important ideas, examples, and applications.", "The goal is to understand the concept well enough to use it."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Key Concept 1", "purpose":"Concept", "bullets":[content[:220]], "teacher_note":"Explain the first major idea clearly.", "visual_query":t, "is_cover":False},
-        {"title":"Key Concept 2", "purpose":"Concept", "bullets":[f"Identify another important idea related to {t}.", "Define the key term in your own words.", "Give one clear example."], "teacher_note":"","visual_query":t, "is_cover":False},
-        {"title":"Key Concept 3", "purpose":"Concept", "bullets":[f"Connect the earlier ideas to a third important part of {t}.", "Compare it with the previous concept.", "Give one additional example."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Example / Application", "purpose":"Application", "bullets":[f"Apply {t} to a realistic situation.", "Identify the important information.", "Explain how the lesson concept helps solve or understand the situation."], "teacher_note":"","visual_query":t, "is_cover":False},
-        {"title":"Guided Practice", "purpose":"Guided Practice", "bullets":["Complete one example together with the teacher.", "Explain each step or idea before moving on.", "Check the class answer and correct misconceptions."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Student Activity", "purpose":"Activity", "bullets":[payload["activity_preference"] or "Work with a partner or group.", f"Create or solve a task that applies {t}.", "Prepare to explain your answer or output."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Processing Questions", "purpose":"Processing", "bullets":[f"What did the activity help you understand about {t}?", "Which part was easiest or most challenging?", "What evidence supports your answer?"], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Generalization", "purpose":"Generalization", "bullets":[f"What have we learned about {t}?", "State the most important idea in one sentence.", "Explain how the key concepts are connected."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Values / Real-Life Connection", "purpose":"Values", "bullets":[f"How can understanding {t} help in real life?", "What responsible action, value, or habit connects to this lesson?"], "teacher_note":"","visual_query":"","is_cover":False},
+        {"title":topic,"kind":"cover","bullets":[],"question":"","choices":[],"answer_note":"","visual_query":topic},
+        {"title":"Learning Objectives","kind":"content","bullets":objectives[:3],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Learning Competency","kind":"content","bullets":[comp],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Review / Recall","kind":"content","bullets":[f"What do you already know about {topic}?","Share one related idea from a previous lesson."],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Motivation / Engage","kind":"content","bullets":[f"Observe or think of a real situation related to {topic}.","What do you notice? Why might it matter?"],"question":"","choices":[],"answer_note":"","visual_query":topic},
+        {"title":"Lesson Introduction","kind":"content","bullets":[f"This lesson focuses on {topic}.","We will examine its main ideas, examples, and applications."],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Key Concepts","kind":"content","bullets":[content[:260]],"question":"","choices":[],"answer_note":"","visual_query":topic},
+        {"title":"Guided Practice","kind":"activity","bullets":[f"Work through one example about {topic} with the teacher.","Explain each step or idea before moving on."],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Student Activity","kind":"activity","bullets":[f"Apply what you learned about {topic}.","Work individually or with a partner and prepare to explain your answer."],"question":"","choices":[],"answer_note":"","visual_query":""},
+        {"title":"Generalization","kind":"content","bullets":[f"What are the most important ideas about {topic}?","State one key takeaway in your own words."],"question":"","choices":[],"answer_note":"","visual_query":""},
     ]
-
-    questions, answers = [], []
-    for i in range(1, payload["assessment_count"] + 1):
-        if payload["assessment_type"] == "Multiple Choice":
-            questions.append(f"{i}. Which statement best shows correct understanding of {t}?")
-            answers.append(f"{i}. Correct option should match the lesson explanation.")
-        elif payload["assessment_type"] == "True or False":
-            questions.append(f"{i}. True or False: Evaluate a lesson-based statement about {t}.")
-            answers.append(f"{i}. Determine from the lesson content.")
-        elif payload["assessment_type"] == "Problem Solving":
-            questions.append(f"{i}. Solve a lesson-based problem involving {t}.")
-            answers.append(f"{i}. Accept the correct process and final answer.")
+    count = data["assessment_count"]
+    atype = data["assessment_type"]
+    for i in range(1,count+1):
+        if atype == "Multiple Choice":
+            q = f"{i}. Which statement best demonstrates correct understanding of {topic}?"
+            ch = ["A. First possible response","B. Second possible response","C. Third possible response","D. Fourth possible response"]
+            ans = "Teacher guide: replace with the correct option if using fallback mode."
+        elif atype == "True or False":
+            q = f"{i}. True or False: Evaluate a statement about {topic}."
+            ch = []
+            ans = "Teacher guide: verify the correct response using the lesson content."
         else:
-            questions.append(f"{i}. Give a correct response based on the lesson about {t}.")
-            answers.append(f"{i}. Accept an accurate response supported by the lesson.")
+            q = f"{i}. Give a correct lesson-based response about {topic}."
+            ch = []
+            ans = "Teacher guide: accept an accurate answer supported by the lesson."
+        slides.append({"title":f"Assessment {i}","kind":"assessment","bullets":[],"question":q,"choices":ch,"answer_note":ans,"visual_query":""})
+    slides.append({"title":"Lesson Summary","kind":"closing","bullets":[f"Review the most important concepts about {topic}.","Connect the lesson to one practical situation."],"question":"","choices":[],"answer_note":"","visual_query":""})
+    return {"slides":slides}
 
-    slides += [
-        {"title":"Assessment", "purpose":"Assessment", "bullets":questions, "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Answer Key", "purpose":"Answer Key", "bullets":answers, "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Assignment / Enrichment", "purpose":"Assignment", "bullets":[f"Find or create one example showing {t} outside the classroom.", "Explain the example in 3–5 sentences or through a simple output."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Lesson Summary", "purpose":"Summary", "bullets":[f"{t} can be understood through its key ideas, examples, and applications.", "Remember the main terms and how they connect.", "Use the concept accurately in new situations."], "teacher_note":"","visual_query":"","is_cover":False},
-        {"title":"Closing Reflection", "purpose":"Closing", "bullets":[f"Complete the sentence: One important thing I learned about {t} is...", "What question do you still have?"], "teacher_note":"","visual_query":"","is_cover":False},
-    ]
+# =========================================================
+# QUIZ PARSER
+# =========================================================
+def quiz_placeholder(assessment_type):
+    if assessment_type == "Multiple Choice":
+        return """1. Which process changes liquid water into water vapor?
+A. Condensation
+B. Evaporation
+C. Precipitation
+D. Collection
+Answer: B
 
-    target = payload["slide_count"]
-    if target < len(slides):
-        # Keep essential beginning and ending slides; combine concept/activity content.
-        essential = slides[:6]
-        middle = slides[6:15]
-        ending = slides[15:]
-        combined = []
-        for s in middle:
-            combined.append(s)
-        slides = (essential + combined + ending)[:target]
-        if target >= 3:
-            slides[-2] = ending[-2]
-            slides[-1] = ending[-1]
-    while len(slides) < target:
-        slides.insert(-2, {
-            "title":"Extended Learning",
-            "purpose":"Enrichment",
-            "bullets":[f"Explore another example or application of {t}.", "Connect it to the lesson's key concepts.", "Share your explanation with the class."],
-            "teacher_note":"","visual_query":t,"is_cover":False
+2. Which stage forms clouds?
+A. Evaporation
+B. Collection
+C. Condensation
+D. Runoff
+Answer: C"""
+    if assessment_type == "True or False":
+        return """1. Evaporation is caused by heat.
+Answer: True
+
+2. Condensation changes liquid water into vapor.
+Answer: False"""
+    return """1. What process changes water vapor into liquid droplets?
+Answer: Condensation
+
+2. Name one form of precipitation.
+Answer: Rain"""
+
+def parse_quiz(text, assessment_type):
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
+    items = []
+    for idx, block in enumerate(blocks,1):
+        lines = [x.strip() for x in block.splitlines() if x.strip()]
+        answer = ""
+        visible = []
+        for line in lines:
+            if re.match(r"(?i)^answer\s*:", line):
+                answer = re.sub(r"(?i)^answer\s*:\s*", "", line).strip()
+            else:
+                visible.append(line)
+
+        if not visible:
+            continue
+
+        question = visible[0]
+        if not re.match(r"^\d+[\.\)]", question):
+            question = f"{idx}. {question}"
+
+        choices = []
+        if assessment_type == "Multiple Choice":
+            choices = visible[1:]
+        else:
+            # Keep any extra prompt lines as part of the question.
+            if len(visible) > 1:
+                question += "\n" + "\n".join(visible[1:])
+
+        items.append({
+            "number": idx,
+            "question": question,
+            "choices": choices,
+            "answer": answer
         })
+    return items
 
-    return {
-        "alignment_summary":{"source":"Teacher Inputs","competency":competency,"objectives":objectives[:3],"strategy":payload["strategy"]},
-        "slides":slides[:target]
-    }
-
-def commons_image(query):
-    if not query:
-        return None
-    try:
-        params = {
-            "action":"query","generator":"search","gsrsearch":query,
-            "gsrnamespace":6,"gsrlimit":6,"prop":"imageinfo",
-            "iiprop":"url","iiurlwidth":900,"format":"json","origin":"*"
-        }
-        r = requests.get("https://commons.wikimedia.org/w/api.php", params=params, timeout=15)
-        pages = r.json().get("query",{}).get("pages",{})
-        for page in pages.values():
-            info = (page.get("imageinfo") or [{}])[0]
-            url = info.get("thumburl") or info.get("url")
-            if url:
-                rr = requests.get(url, timeout=15)
-                if rr.ok:
-                    return io.BytesIO(rr.content)
-    except Exception:
-        pass
-    return None
-
+# =========================================================
+# PPTX HELPERS
+# =========================================================
 THEMES = {
-    "Mathematics":(RGBColor(63,75,157),RGBColor(239,242,255),RGBColor(29,36,73)),
+    "Mathematics":(RGBColor(62,75,155),RGBColor(239,242,255),RGBColor(29,36,73)),
     "Science":(RGBColor(44,113,89),RGBColor(238,248,244),RGBColor(26,65,53)),
     "English":(RGBColor(116,61,141),RGBColor(248,240,250),RGBColor(64,34,76)),
     "Filipino":(RGBColor(121,57,104),RGBColor(250,240,247),RGBColor(70,34,60)),
@@ -512,20 +542,19 @@ THEMES = {
     "TLE / ICT":(RGBColor(55,87,131),RGBColor(238,244,250),RGBColor(31,48,71)),
     "MAPEH":(RGBColor(130,59,114),RGBColor(249,240,247),RGBColor(73,36,65)),
     "Values / ESP":(RGBColor(98,64,141),RGBColor(245,240,250),RGBColor(55,37,77)),
-    "Other":(RGBColor(104,38,132),RGBColor(248,241,250),RGBColor(45,31,53))
+    "Other":(RGBColor(104,38,132),RGBColor(248,241,250),RGBColor(45,31,53)),
 }
 WHITE = RGBColor(255,255,255)
 
-def set_run(run, size, bold, color):
+def style_run(run, size, bold, color):
     run.font.name = "Times New Roman"
-    run.font.size = Pt(max(48, size))
+    run.font.size = Pt(size)
     run.font.bold = bold
     run.font.color.rgb = color
 
-def add_textbox(slide, text, left, top, width, height, size, bold, color,
-                align=PP_ALIGN.LEFT, valign=MSO_ANCHOR.TOP):
-    box = slide.shapes.add_textbox(left, top, width, height)
-    tf = box.text_frame
+def textbox(slide,text,l,t,w,h,size,bold,color,align=PP_ALIGN.LEFT,valign=MSO_ANCHOR.TOP):
+    shape = slide.shapes.add_textbox(l,t,w,h)
+    tf = shape.text_frame
     tf.clear()
     tf.word_wrap = True
     tf.vertical_anchor = valign
@@ -533,283 +562,356 @@ def add_textbox(slide, text, left, top, width, height, size, bold, color,
     p.alignment = align
     r = p.add_run()
     r.text = text
-    set_run(r, size, bold, color)
-    return box
+    style_run(r,size,bold,color)
+    return shape
 
-def split_for_readability(slide):
+def base_slide(prs, subject):
+    blank = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank)
+    accent, soft, ink = THEMES[subject]
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = soft
+
+    left_band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,0,0,Inches(.16),Inches(7.5))
+    left_band.fill.solid()
+    left_band.fill.fore_color.rgb = accent
+    left_band.line.fill.background()
+
+    top_band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE,Inches(.16),0,Inches(13.17),Inches(.12))
+    top_band.fill.solid()
+    top_band.fill.fore_color.rgb = accent
+    top_band.line.fill.background()
+
+    panel = slide.shapes.add_shape(
+        MSO_SHAPE.ROUNDED_RECTANGLE,
+        Inches(.55),Inches(.45),Inches(12.15),Inches(6.5)
+    )
+    panel.fill.solid()
+    panel.fill.fore_color.rgb = WHITE
+    panel.line.color.rgb = accent
+    panel.line.transparency = 70
+    return slide, accent, soft, ink
+
+def add_note(slide, text):
+    if not text:
+        return
+    try:
+        slide.notes_slide.notes_text_frame.text = text
+    except Exception:
+        pass
+
+def split_lesson_slide(slide_data):
+    if slide_data.get("kind") == "assessment":
+        return [slide_data]
     bullets = []
-    for item in slide.get("bullets",[]) or []:
-        x = re.sub(r"\s+"," ",str(item)).strip(" •-\n\t")
-        if x:
-            bullets.append(x)
-
-    expanded = []
-    for b in bullets:
-        if len(b) <= 135:
-            expanded.append(b)
+    for b in slide_data.get("bullets",[]) or []:
+        b = re.sub(r"\s+"," ",str(b)).strip()
+        if not b:
+            continue
+        if len(b) <= 125:
+            bullets.append(b)
         else:
-            parts = [x.strip() for x in re.split(r"(?<=[.!?;:])\s+", b) if x.strip()]
-            expanded.extend(parts or [b])
+            parts = [x.strip() for x in re.split(r"(?<=[.!?;:])\s+",b) if x.strip()]
+            bullets.extend(parts or [b])
 
-    per = 3
-    chunks = [expanded[i:i+per] for i in range(0,len(expanded),per)] or [[]]
+    chunks = [bullets[i:i+3] for i in range(0,len(bullets),3)] or [[]]
     out = []
-    for i, c in enumerate(chunks):
-        d = dict(slide)
-        d["bullets"] = c
+    for i,ch in enumerate(chunks):
+        d = dict(slide_data)
+        d["bullets"] = ch
         if i:
-            d["title"] = slide.get("title","Lesson") + " (continued)"
+            d["title"] = slide_data.get("title","Lesson") + " (continued)"
             d["visual_query"] = ""
         out.append(d)
     return out
 
+def commons_image(query):
+    if not query:
+        return None
+    try:
+        params={"action":"query","generator":"search","gsrsearch":query,"gsrnamespace":6,"gsrlimit":5,
+                "prop":"imageinfo","iiprop":"url","iiurlwidth":900,"format":"json","origin":"*"}
+        pages=requests.get("https://commons.wikimedia.org/w/api.php",params=params,timeout=15).json().get("query",{}).get("pages",{})
+        for p in pages.values():
+            info=(p.get("imageinfo") or [{}])[0]
+            url=info.get("thumburl") or info.get("url")
+            if url:
+                r=requests.get(url,timeout=15)
+                if r.ok:
+                    return io.BytesIO(r.content)
+    except Exception:
+        pass
+    return None
+
 def add_visual(slide, image_bytes, accent):
     try:
-        im = Image.open(image_bytes).convert("RGB")
-        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        im.save(tmp.name, "JPEG", quality=90)
-        frame = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE,
-            Inches(8.65), Inches(1.92), Inches(3.75), Inches(3.72)
-        )
-        frame.fill.solid()
-        frame.fill.fore_color.rgb = WHITE
-        frame.line.color.rgb = accent
-        slide.shapes.add_picture(
-            tmp.name, Inches(8.82), Inches(2.08),
-            width=Inches(3.4), height=Inches(3.38)
-        )
+        im=Image.open(image_bytes).convert("RGB")
+        tmp=tempfile.NamedTemporaryFile(suffix=".jpg",delete=False)
+        im.save(tmp.name,"JPEG",quality=90)
+        frame=slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,Inches(8.68),Inches(1.92),Inches(3.62),Inches(3.65))
+        frame.fill.solid();frame.fill.fore_color.rgb=WHITE;frame.line.color.rgb=accent
+        slide.shapes.add_picture(tmp.name,Inches(8.84),Inches(2.08),width=Inches(3.30),height=Inches(3.32))
         os.unlink(tmp.name)
     except Exception:
         pass
 
-def build_ppt(plan, meta, include_visuals):
-    prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
-    blank = prs.slide_layouts[6]
-    accent, soft, ink = THEMES[meta["subject"]]
+def quiz_font_size(question, choices):
+    total = len(question) + sum(len(x) for x in choices)
+    if total <= 260:
+        return 45
+    if total <= 360:
+        return 40
+    if total <= 500:
+        return 36
+    if total <= 680:
+        return 32
+    return 28
 
-    output_slides = []
+def build_lesson_ppt(plan, data, include_visuals):
+    prs=Presentation()
+    prs.slide_width=Inches(13.333)
+    prs.slide_height=Inches(7.5)
+
+    slides=[]
     for s in plan.get("slides",[]):
-        output_slides.extend(split_for_readability(s))
+        slides.extend(split_lesson_slide(s))
 
-    for s in output_slides:
-        slide = prs.slides.add_slide(blank)
-        slide.background.fill.solid()
-        slide.background.fill.fore_color.rgb = soft
+    for s in slides:
+        slide,accent,soft,ink=base_slide(prs,data["subject"])
 
-        strip = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(.18), Inches(7.5))
-        strip.fill.solid()
-        strip.fill.fore_color.rgb = accent
-        strip.line.fill.background()
-
-        panel = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE,
-            Inches(.55), Inches(.45), Inches(12.1), Inches(6.5)
-        )
-        panel.fill.solid()
-        panel.fill.fore_color.rgb = WHITE
-        panel.line.color.rgb = accent
-        panel.line.transparency = 68
-
-        if s.get("is_cover"):
-            add_textbox(
-                slide, meta["topic"], Inches(1.0), Inches(1.20), Inches(11.2), Inches(1.55),
-                60, True, accent, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
-            )
-            details = f'{meta["subject"]} • {meta["grade"]}\nTeacher: {meta["teacher"]}\n{meta["lesson_date"]} • {meta["duration"]}'
-            add_textbox(
-                slide, details, Inches(1.2), Inches(3.20), Inches(10.8), Inches(2.0),
-                48, False, ink, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
-            )
+        if s.get("kind")=="cover":
+            textbox(slide,data["title"],Inches(1),Inches(1.35),Inches(11.2),Inches(1.55),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+            textbox(slide,f'{data["subject"]}\n{data["year_level"]}',Inches(1.3),Inches(3.45),Inches(10.6),Inches(1.5),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
             continue
 
-        add_textbox(
-            slide, s.get("title","Lesson"), Inches(.92), Inches(.68), Inches(11.25), Inches(.85),
-            52, True, accent
-        )
+        if s.get("kind")=="assessment":
+            textbox(slide,s.get("title","Assessment"),Inches(.9),Inches(.68),Inches(11.3),Inches(.75),48,True,accent)
+            q=s.get("question","").strip()
+            choices=s.get("choices",[]) or []
+            size=45
+            textbox(slide,q,Inches(.95),Inches(1.55),Inches(11.0),Inches(1.65),size,False,ink)
+            if choices:
+                ctext="\n".join(choices)
+                textbox(slide,ctext,Inches(1.05),Inches(3.15),Inches(10.8),Inches(2.95),45,False,ink)
+            add_note(slide,s.get("answer_note",""))
+            continue
+
+        textbox(slide,s.get("title","Lesson"),Inches(.9),Inches(.68),Inches(11.3),Inches(.78),48,True,accent)
 
         img = commons_image(s.get("visual_query","")) if include_visuals and s.get("visual_query") else None
-        text_width = Inches(7.05) if img else Inches(11.0)
-
-        box = slide.shapes.add_textbox(Inches(.95), Inches(1.72), text_width, Inches(4.95))
-        tf = box.text_frame
+        text_w=Inches(7.1) if img else Inches(11.0)
+        box=slide.shapes.add_textbox(Inches(.95),Inches(1.65),text_w,Inches(4.95))
+        tf=box.text_frame
         tf.clear()
-        tf.word_wrap = True
-        for i, bullet in enumerate(s.get("bullets",[])[:3]):
-            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = bullet
-            p.space_after = Pt(9)
+        tf.word_wrap=True
+        for i,b in enumerate(s.get("bullets",[])[:3]):
+            p=tf.paragraphs[0] if i==0 else tf.add_paragraph()
+            p.text=b
+            p.space_after=Pt(8)
             for r in p.runs:
-                set_run(r, 48, False, ink)
-
+                style_run(r,45,False,ink)
         if img:
-            add_visual(slide, img, accent)
+            add_visual(slide,img,accent)
+        add_note(slide,s.get("answer_note",""))
 
-        if s.get("teacher_note"):
-            try:
-                slide.notes_slide.notes_text_frame.text = "Teacher cue: " + s["teacher_note"]
-            except Exception:
-                pass
-
-    out = io.BytesIO()
+    out=io.BytesIO()
     prs.save(out)
     out.seek(0)
     return out
 
-with st.form("slidecraft"):
-    st.markdown('<div class="note"><b>Only the essential lesson details are required.</b> Leave optional fields blank and SlideCraft will generate them from the topic and uploaded materials.</div>', unsafe_allow_html=True)
+def build_quiz_ppt(title, year, subject, assessment_type, items):
+    prs=Presentation()
+    prs.slide_width=Inches(13.333)
+    prs.slide_height=Inches(7.5)
 
-    section(1, "Required Lesson Information", "These details define the class context and appear on the lesson title slide.")
-    c1, c2 = st.columns(2)
-    with c1:
-        teacher = st.text_input("Teacher's Name *", placeholder="Example: Maria D. Santos")
-        topic = st.text_input("Lesson Topic / Title *", placeholder="Example: The Water Cycle")
-        grade = st.text_input("Grade Level / Section *", placeholder="Example: Grade 7 - Rizal")
-    with c2:
-        subject = st.selectbox("Subject / Learning Area *", list(THEMES.keys()))
-        duration = st.text_input("Lesson Duration *", placeholder="Example: 60 minutes")
-        lesson_date = st.date_input("Lesson Date", value=date.today())
+    slide,accent,soft,ink=base_slide(prs,subject)
+    textbox(slide,title,Inches(1),Inches(1.35),Inches(11.2),Inches(1.6),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+    textbox(slide,f"{subject}\n{year}\n{assessment_type}",Inches(1.2),Inches(3.45),Inches(10.8),Inches(1.8),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
 
-    section(2, "Optional Alignment Details", "Enter these if you already have them. If blank, AI will generate them.")
-    competency = st.text_area(
-        "Learning Competency (Optional)",
-        placeholder="Example: Describe the processes involved in the water cycle.",
-        height=100,
-        help="If blank, AI derives one from your topic and uploaded curriculum/reference materials."
-    )
-    objectives_text = st.text_area(
-        "3 Learning Objectives (Optional)",
-        placeholder="One objective per line.\nExample:\nIdentify the stages of the water cycle.\nExplain how each stage works.\nRelate the water cycle to daily weather.",
-        height=145,
-    )
-    previous_lesson = st.text_input(
-        "Previous Lesson (Optional)",
-        placeholder="Example: States of Matter"
-    )
+    for item in items:
+        slide,accent,soft,ink=base_slide(prs,subject)
+        textbox(slide,f"Item {item['number']}",Inches(.9),Inches(.68),Inches(11.2),Inches(.72),48,True,accent)
+        size=quiz_font_size(item["question"],item["choices"])
+        textbox(slide,item["question"],Inches(.95),Inches(1.48),Inches(11.1),Inches(1.75),size,False,ink,PP_ALIGN.LEFT)
+        if item["choices"]:
+            choice_size=min(45,size)
+            textbox(slide,"\n".join(item["choices"]),Inches(1.05),Inches(3.10),Inches(10.8),Inches(3.0),choice_size,False,ink,PP_ALIGN.LEFT)
+        add_note(slide,"Answer: " + (item["answer"] or "Not provided"))
 
-    c3, c4 = st.columns(2)
-    with c3:
-        strategy = st.selectbox(
-            "Teaching Strategy (Optional)",
-            ["Auto-select", "I Do, We Do, You Do", "4E: Engage, Explore, Explain, Evaluate",
-             "Gamification", "Real-World Connections", "Inquiry-Based Learning",
-             "Collaborative Learning", "Problem-Based Learning", "Discussion-Based Learning"]
+    out=io.BytesIO()
+    prs.save(out)
+    out.seek(0)
+    return out
+
+# =========================================================
+# FULL LESSON FORM
+# =========================================================
+if mode == "Full Lesson to PPT":
+    with st.form("lesson_form"):
+        st.markdown('<div class="tip"><b>Required:</b> Lesson Title, Year Level, and Subject only. Everything else helps SlideCraft align and improve the presentation.</div>',unsafe_allow_html=True)
+
+        section(1,"Required Lesson Information","Only three fields are required.")
+        c1,c2,c3=st.columns(3)
+        with c1:
+            lesson_title=st.text_input("Lesson Title *",placeholder="Example: The Water Cycle")
+        with c2:
+            year_level=st.text_input("Year Level *",placeholder="Example: Grade 7")
+        with c3:
+            subject=st.selectbox("Subject *",list(THEMES.keys()))
+
+        section(2,"Learning Competency and Objectives","Enter these when available. They can be left blank.")
+        competency=st.text_area("Learning Competency (Optional)",placeholder="Paste the curriculum competency here.",height=95)
+        objectives_text=st.text_area(
+            "Learning Objectives (Optional)",
+            placeholder="One objective per line.\nExample:\nIdentify the stages of the water cycle.\nExplain each stage.\nRelate the water cycle to daily weather.",
+            height=135
         )
-    with c4:
-        activity_preference = st.selectbox(
-            "Activity Preference (Optional)",
-            ["Auto-generate", "Individual", "Pair Work", "Small Group", "Whole Class", "Hands-on / Performance"]
+
+        section(3,"Lesson Content / Knowledge","Put the actual information that must appear in the PowerPoint.")
+        lesson_content=st.text_area(
+            "Lesson Content / Knowledge (Optional but recommended)",
+            placeholder="Paste the explanations, terms, facts, examples, formulas, Bible verses, procedures, or other lesson information that students need to see.",
+            height=260,
+            help="SlideCraft will arrange this content across enough slides so it remains readable."
         )
 
-    section(3, "Lesson Content / Knowledge", "Paste any facts, explanations, examples, formulas, references, or notes you want the presentation to actually teach.")
-    lesson_content = st.text_area(
-        "Content / Key Points (Optional)",
-        placeholder="Example:\n- Evaporation: liquid water changes to water vapor because of heat.\n- Condensation: water vapor cools and forms droplets.\n- Precipitation: water falls as rain, snow, sleet, or hail.\n- Collection: water gathers in rivers, lakes, and oceans.",
-        height=220,
-        help="If blank, AI creates the lesson content from the topic and uploaded materials."
-    )
-    extra = st.text_area(
-        "Additional Instructions (Optional)",
-        placeholder="Example: Use simple Grade 7 language, include a local weather example, and make the activity suitable for a 60-minute class.",
-        height=110
-    )
-
-    section(4, "Upload Teaching Resources (Optional)", "Upload curriculum or lesson materials. SlideCraft will use them as the strongest alignment references.")
-    curriculum = st.file_uploader("Curriculum Map", type=["pdf","docx","pptx","txt"])
-    unit_plan = st.file_uploader("Unit Plan", type=["pdf","docx","pptx","txt"])
-    lesson_plan = st.file_uploader("Lesson Plan / Reference Material", type=["pdf","docx","pptx","txt"])
-
-    section(5, "Presentation Length & Assessment", "Choose how detailed the presentation should be.")
-    p1, p2, p3 = st.columns(3)
-    with p1:
-        slide_option = st.selectbox("Number of Slides", ["10", "15", "20", "Custom"])
-    with p2:
-        assessment_type = st.selectbox(
-            "Assessment Type (Optional)",
-            ["Auto-select", "Mixed", "Multiple Choice", "True or False",
-             "Identification", "Short Response", "Problem Solving", "Performance Task"]
+        section(4,"Teaching Resources / Lesson Links","Upload files or paste links that SlideCraft can use to align the lesson.")
+        resources=st.file_uploader(
+            "Teaching Resources",
+            type=["pdf","docx","pptx","txt"],
+            accept_multiple_files=True
         )
-    with p3:
-        assessment_count = st.number_input("Assessment Questions", min_value=3, max_value=10, value=5)
+        links=st.text_area(
+            "Lesson / Reference Links",
+            placeholder="Paste one link per line.\nhttps://example.com/resource-1\nhttps://example.com/resource-2",
+            height=100
+        )
 
-    custom_count = None
-    if slide_option == "Custom":
-        custom_count = st.number_input("Custom Slide Count", min_value=8, max_value=30, value=20)
+        section(5,"Assessment and Presentation Length","Assessment items are placed one per slide. Answers are stored in speaker notes for the teacher.")
+        c1,c2,c3=st.columns(3)
+        with c1:
+            assessment_type=st.selectbox(
+                "Assessment Type",
+                ["Multiple Choice","True or False","Identification","Short Response","Problem Solving"]
+            )
+        with c2:
+            assessment_count=st.number_input("Number of Assessment Items",min_value=0,max_value=20,value=5)
+        with c3:
+            preferred_slides=st.number_input(
+                "Preferred Number of Slides",
+                min_value=6,max_value=50,value=15,
+                help="SlideCraft may add more slides if needed so no teacher-provided information is omitted or overcrowded."
+            )
 
-    include_visuals = st.checkbox("Include relevant topic visuals / graphics when available", value=True)
+        include_visuals=st.checkbox("Include relevant topic visuals when available",value=True)
+        extra=st.text_area(
+            "Additional Instructions (Optional)",
+            placeholder="Example: Use simple Grade 7 language and include a group activity.",
+            height=90
+        )
 
-    submit = st.form_submit_button("✨ Generate Teacher Lesson PowerPoint")
+        submit_lesson=st.form_submit_button("Generate Full Lesson PowerPoint")
 
-if submit:
-    if not all([teacher.strip(), topic.strip(), grade.strip(), duration.strip()]):
-        st.error("Please complete Teacher's Name, Lesson Topic / Title, Grade Level / Section, and Lesson Duration.")
-        st.stop()
+    if submit_lesson:
+        if not lesson_title.strip() or not year_level.strip():
+            st.error("Please enter the Lesson Title and Year Level.")
+            st.stop()
 
-    objectives = [x.strip(" •-\t") for x in objectives_text.splitlines() if x.strip()][:3]
-    slide_count = int(custom_count if slide_option == "Custom" else slide_option)
-
-    resources = {
-        "curriculum_map": read_upload(curriculum)[:12000],
-        "unit_plan": read_upload(unit_plan)[:12000],
-        "lesson_plan_or_reference": read_upload(lesson_plan)[:12000],
-    }
-
-    payload = {
-        "teacher_name": teacher.strip(),
-        "topic": topic.strip(),
-        "subject": subject,
-        "grade_level": grade.strip(),
-        "duration": duration.strip(),
-        "lesson_date": str(lesson_date),
-        "competency": competency.strip(),
-        "objectives": objectives,
-        "previous_lesson": previous_lesson.strip(),
-        "strategy": strategy,
-        "activity_preference": activity_preference,
-        "lesson_content": lesson_content.strip(),
-        "additional_instructions": extra.strip(),
-        "assessment_type": assessment_type,
-        "assessment_count": int(assessment_count),
-        "slide_count": slide_count,
-        "uploaded_resources": resources,
-    }
-
-    with st.spinner("SlideCraft is creating a complete teacher visual aid..."):
-        plan = None
-        key = get_api_key()
-        if key:
-            try:
-                plan = ai_plan(key, payload)
-            except Exception as e:
-                st.warning("AI generation was temporarily unavailable, so the built-in generator was used.")
-        else:
-            st.info("Gemini is not configured in Streamlit Secrets, so the built-in generator is being used.")
-
-        if plan is None:
-            plan = fallback_plan(payload)
-
-        meta = {
-            "teacher": teacher.strip(),
-            "topic": topic.strip(),
-            "subject": subject,
-            "grade": grade.strip(),
-            "duration": duration.strip(),
-            "lesson_date": lesson_date.strftime("%B %d, %Y"),
+        refs=collect_references(resources,links)
+        objectives=[x.strip(" •-\t") for x in objectives_text.splitlines() if x.strip()][:5]
+        data={
+            "title":lesson_title.strip(),
+            "year_level":year_level.strip(),
+            "subject":subject,
+            "competency":competency.strip(),
+            "objectives":objectives,
+            "content":lesson_content.strip(),
+            "references":refs,
+            "assessment_type":assessment_type,
+            "assessment_count":int(assessment_count),
+            "preferred_slide_count":int(preferred_slides),
+            "additional_instructions":extra.strip(),
         }
-        ppt = build_ppt(plan, meta, include_visuals)
 
-    safe = re.sub(r"[^A-Za-z0-9_-]+","_",topic).strip("_") or "lesson"
-    st.success("Your teacher-ready lesson PowerPoint is ready.")
-    st.download_button(
-        "Download Lesson PowerPoint",
-        data=ppt,
-        file_name=f"{safe}_SlideCraft.pptx",
-        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        use_container_width=True,
-    )
+        with st.spinner("Creating your complete lesson presentation..."):
+            plan=None
+            key=api_key()
+            if key:
+                try:
+                    plan=lesson_ai_plan(key,data)
+                except Exception:
+                    st.warning("Gemini could not generate this presentation, so the built-in generator was used.")
+            if plan is None:
+                plan=lesson_fallback(data)
 
-    with st.expander("View generated slide structure"):
-        for i, s in enumerate(plan.get("slides",[]), 1):
-            st.write(f"{i}. {s.get('title','Slide')} — {s.get('purpose','')}")
+            ppt=build_lesson_ppt(plan,data,include_visuals)
+
+        safe=re.sub(r"[^A-Za-z0-9_-]+","_",lesson_title).strip("_") or "lesson"
+        st.success("Your full lesson PowerPoint is ready.")
+        st.download_button(
+            "Download Full Lesson PowerPoint",
+            ppt,
+            f"{safe}_SlideCraft_Lesson.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+
+        with st.expander("Generated slide structure"):
+            for i,s in enumerate(plan.get("slides",[]),1):
+                st.write(f"{i}. {s.get('title','Slide')}")
+
+# =========================================================
+# QUIZ-ONLY FORM
+# =========================================================
+else:
+    with st.form("quiz_form"):
+        st.markdown('<div class="tip"><b>Quiz mode:</b> one item per slide. Multiple-choice slides show the item number, complete question, and choices. The correct answer is placed in the PowerPoint speaker notes.</div>',unsafe_allow_html=True)
+
+        section(1,"Quiz Information","Only the quiz title, year level, and subject are needed.")
+        c1,c2,c3=st.columns(3)
+        with c1:
+            quiz_title=st.text_input("Quiz Title *",placeholder="Example: Water Cycle Quiz")
+        with c2:
+            quiz_year=st.text_input("Year Level *",placeholder="Example: Grade 7")
+        with c3:
+            quiz_subject=st.selectbox("Subject *",list(THEMES.keys()),key="quiz_subject")
+
+        section(2,"Assessment Type","Choose the format of the questions you will paste.")
+        quiz_type=st.selectbox(
+            "Assessment Type",
+            ["Multiple Choice","True or False","Identification / Short Answer"]
+        )
+
+        section(3,"Paste Quiz Questions","Separate each item with a blank line. Include an Answer line so the teacher answer is saved in the slide notes.")
+        quiz_text=st.text_area(
+            "Quiz Questions *",
+            placeholder=quiz_placeholder(quiz_type),
+            height=390
+        )
+
+        submit_quiz=st.form_submit_button("Generate Quiz PowerPoint")
+
+    if submit_quiz:
+        if not quiz_title.strip() or not quiz_year.strip() or not quiz_text.strip():
+            st.error("Please complete the Quiz Title, Year Level, and Quiz Questions.")
+            st.stop()
+
+        items=parse_quiz(quiz_text,quiz_type)
+        if not items:
+            st.error("No quiz items could be read. Please follow the sample format shown in the question box.")
+            st.stop()
+
+        ppt=build_quiz_ppt(
+            quiz_title.strip(),
+            quiz_year.strip(),
+            quiz_subject,
+            quiz_type,
+            items
+        )
+        safe=re.sub(r"[^A-Za-z0-9_-]+","_",quiz_title).strip("_") or "quiz"
+        st.success(f"Your quiz PowerPoint is ready with {len(items)} item slide(s).")
+        st.download_button(
+            "Download Quiz PowerPoint",
+            ppt,
+            f"{safe}_SlideCraft_Quiz.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
