@@ -740,6 +740,55 @@ def quiz_font_size(question, choices):
         return 32
     return 28
 
+
+def add_answer_key_slides(prs, subject, answers, title="Answer Key"):
+    """Create readable visible answer-key slides. Every item is included."""
+    if not answers:
+        return
+
+    # 5 short answers per slide keeps 45 pt readable.
+    # Longer answers are grouped more conservatively.
+    chunks = []
+    current = []
+    current_chars = 0
+
+    for number, answer in answers:
+        line = f"{number}. {answer or 'Answer not provided'}"
+        # Start a new slide if we already have 5 items or too much text.
+        if current and (len(current) >= 5 or current_chars + len(line) > 260):
+            chunks.append(current)
+            current = []
+            current_chars = 0
+        current.append(line)
+        current_chars += len(line)
+
+    if current:
+        chunks.append(current)
+
+    for idx, chunk in enumerate(chunks):
+        slide, accent, soft, ink = base_slide(prs, subject)
+        heading = title if idx == 0 else f"{title} (continued)"
+        textbox(
+            slide, heading,
+            Inches(.9), Inches(.68), Inches(11.3), Inches(.78),
+            48, True, accent
+        )
+
+        box = slide.shapes.add_textbox(
+            Inches(1.0), Inches(1.65), Inches(10.9), Inches(4.95)
+        )
+        tf = box.text_frame
+        tf.clear()
+        tf.word_wrap = True
+
+        for i, line in enumerate(chunk):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.text = line
+            p.alignment = PP_ALIGN.LEFT
+            p.space_after = Pt(10)
+            for r in p.runs:
+                style_run(r, 45, False, ink)
+
 def build_lesson_ppt(plan, data, include_visuals):
     prs=Presentation()
     prs.slide_width=Inches(13.333)
@@ -749,24 +798,48 @@ def build_lesson_ppt(plan, data, include_visuals):
     for s in plan.get("slides",[]):
         slides.extend(split_lesson_slide(s))
 
+    assessment_answers = []
+    assessment_number = 0
+
     for s in slides:
         slide,accent,soft,ink=base_slide(prs,data["subject"])
 
         if s.get("kind")=="cover":
             textbox(slide,data["title"],Inches(1),Inches(1.35),Inches(11.2),Inches(1.55),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
-            textbox(slide,f'{data["subject"]}\n{data["year_level"]}\nCreated with SlideCraft-by-Ajelle • @Aurieeeejjjj',Inches(1.3),Inches(3.15),Inches(10.6),Inches(2.0),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+            textbox(
+                slide,
+                f'{data["subject"]} {data["year_level"]}',
+                Inches(1.3), Inches(3.55), Inches(10.6), Inches(1.15),
+                45, False, ink, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
+            )
             continue
 
         if s.get("kind")=="assessment":
-            textbox(slide,s.get("title","Assessment"),Inches(.9),Inches(.68),Inches(11.3),Inches(.75),48,True,accent)
+            assessment_number += 1
+            textbox(
+                slide, f"Assessment {assessment_number}",
+                Inches(.9), Inches(.68), Inches(11.3), Inches(.75),
+                48, True, accent
+            )
             q=s.get("question","").strip()
             choices=s.get("choices",[]) or []
             size=45
-            textbox(slide,q,Inches(.95),Inches(1.55),Inches(11.0),Inches(1.65),size,False,ink)
+            textbox(
+                slide, q,
+                Inches(.95), Inches(1.55), Inches(11.0), Inches(1.65),
+                size, False, ink, PP_ALIGN.LEFT
+            )
             if choices:
                 ctext="\n".join(choices)
-                textbox(slide,ctext,Inches(1.05),Inches(3.15),Inches(10.8),Inches(2.95),45,False,ink)
-            add_note(slide,s.get("answer_note",""))
+                textbox(
+                    slide, ctext,
+                    Inches(1.05), Inches(3.15), Inches(10.8), Inches(2.95),
+                    45, False, ink, PP_ALIGN.LEFT
+                )
+
+            answer_text = (s.get("answer_note","") or "").strip()
+            add_note(slide, answer_text)
+            assessment_answers.append((assessment_number, answer_text))
             continue
 
         textbox(slide,s.get("title","Lesson"),Inches(.9),Inches(.68),Inches(11.3),Inches(.78),48,True,accent)
@@ -790,6 +863,9 @@ def build_lesson_ppt(plan, data, include_visuals):
             add_visual(slide,img,accent)
         add_note(slide,s.get("answer_note",""))
 
+    # Visible answer key is placed at the end and includes every assessment item.
+    add_answer_key_slides(prs, data["subject"], assessment_answers, "Answer Key")
+
     out=io.BytesIO()
     prs.save(out)
     out.seek(0)
@@ -802,17 +878,42 @@ def build_quiz_ppt(title, year, subject, assessment_type, items):
 
     slide,accent,soft,ink=base_slide(prs,subject)
     textbox(slide,title,Inches(1),Inches(1.35),Inches(11.2),Inches(1.6),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
-    textbox(slide,f"{subject}\n{year}\n{assessment_type}\nCreated with SlideCraft-by-Ajelle • @Aurieeeejjjj",Inches(1.2),Inches(3.10),Inches(10.8),Inches(2.25),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+    textbox(
+        slide,
+        f"{subject} {year}",
+        Inches(1.2), Inches(3.55), Inches(10.8), Inches(1.15),
+        45, False, ink, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
+    )
+
+    answer_entries = []
 
     for item in items:
         slide,accent,soft,ink=base_slide(prs,subject)
-        textbox(slide,f"Item {item['number']}",Inches(.9),Inches(.68),Inches(11.2),Inches(.72),48,True,accent)
+        textbox(
+            slide, f"Item {item['number']}",
+            Inches(.9), Inches(.68), Inches(11.2), Inches(.72),
+            48, True, accent
+        )
         size=quiz_font_size(item["question"],item["choices"])
-        textbox(slide,item["question"],Inches(.95),Inches(1.48),Inches(11.1),Inches(1.75),size,False,ink,PP_ALIGN.LEFT)
+        textbox(
+            slide, item["question"],
+            Inches(.95), Inches(1.48), Inches(11.1), Inches(1.75),
+            size, False, ink, PP_ALIGN.LEFT
+        )
         if item["choices"]:
             choice_size=min(45,size)
-            textbox(slide,"\n".join(item["choices"]),Inches(1.05),Inches(3.10),Inches(10.8),Inches(3.0),choice_size,False,ink,PP_ALIGN.LEFT)
-        add_note(slide,"Answer: " + (item["answer"] or "Not provided"))
+            textbox(
+                slide, "\n".join(item["choices"]),
+                Inches(1.05), Inches(3.10), Inches(10.8), Inches(3.0),
+                choice_size, False, ink, PP_ALIGN.LEFT
+            )
+
+        answer = item["answer"] or "Not provided"
+        add_note(slide, "Answer: " + answer)
+        answer_entries.append((item["number"], answer))
+
+    # Add a complete answer key at the end.
+    add_answer_key_slides(prs, subject, answer_entries, "Answer Key")
 
     out=io.BytesIO()
     prs.save(out)
@@ -863,7 +964,7 @@ if mode == "Full Lesson to PPT":
             height=100
         )
 
-        section(5,"Assessment and Presentation Length","Assessment items are placed one per slide. Answers are stored in speaker notes for the teacher.")
+        section(5,"Assessment and Presentation Length","Assessment items are placed one per slide. Answers are stored in speaker notes and repeated in a complete Answer Key at the end.")
         c1,c2,c3=st.columns(3)
         with c1:
             assessment_type=st.selectbox(
@@ -940,7 +1041,7 @@ if mode == "Full Lesson to PPT":
 # =========================================================
 else:
     with st.form("quiz_form"):
-        st.markdown('<div class="tip"><b>Quiz mode:</b> one item per slide. Multiple-choice slides show the item number, complete question, and choices. The correct answer is placed in the PowerPoint speaker notes.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="tip"><b>Quiz mode:</b> one item per slide. Multiple-choice slides show the item number, complete question, and choices. The correct answer is saved in the speaker notes, and a complete Answer Key is also added at the end of the PowerPoint.</div>',unsafe_allow_html=True)
 
         section(1,"Quiz Information","Only the quiz title, year level, and subject are needed.")
         c1,c2,c3=st.columns(3)
