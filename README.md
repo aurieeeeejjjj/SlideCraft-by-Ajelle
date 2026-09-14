@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/32177112/README.md)
+[README.md](https://github.com/user-attachments/files/32177434/README.md)
 # SlideCraft-by-Ajelle v6
 
 This revision adds two modes:
@@ -33,3 +33,11 @@ GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 pip install -r requirements.txt
 streamlit run app.py
 ```
+
+
+## v7 improvements
+- Generator mode selector is now inside a clearly visible white/light-purple card.
+- Lesson slides automatically try to fetch a topic-related image when a useful visual query is available.
+- If AI does not provide an image query, SlideCraft creates one from the lesson title + slide title.
+- Images are fitted proportionally to reduce stretching.
+- Creator credit added: @Aurieeeejjjj.
