@@ -847,24 +847,32 @@ def add_visual(slide, image_bytes, accent):
 
 def quiz_font_size(question, choices):
     """
-    Start at 45 pt. Reduce only when necessary so ONE quiz item fits one slide.
-    Uses both character count and estimated line count.
+    Start large, then reduce gradually for long items so the complete
+    question and all choices remain inside one slide.
     """
     text_parts = [question] + list(choices or [])
     total_chars = sum(len(x) for x in text_parts)
-    estimated_lines = sum(max(1, (len(x) + 54) // 55) for x in text_parts)
 
-    if total_chars <= 250 and estimated_lines <= 7:
+    # Estimate wrapping in the wide quiz text area.
+    estimated_lines = 0
+    for text in text_parts:
+        estimated_lines += max(1, (len(text) + 47) // 48)
+
+    if total_chars <= 220 and estimated_lines <= 7:
         return 45
-    if total_chars <= 340 and estimated_lines <= 9:
+    if total_chars <= 300 and estimated_lines <= 9:
         return 40
-    if total_chars <= 440 and estimated_lines <= 11:
+    if total_chars <= 390 and estimated_lines <= 11:
         return 36
-    if total_chars <= 560 and estimated_lines <= 13:
+    if total_chars <= 500 and estimated_lines <= 13:
         return 32
-    if total_chars <= 720 and estimated_lines <= 16:
+    if total_chars <= 620 and estimated_lines <= 15:
         return 28
-    return 24
+    if total_chars <= 760 and estimated_lines <= 18:
+        return 24
+    if total_chars <= 920 and estimated_lines <= 21:
+        return 22
+    return 20
 
 
 def add_answer_key_slides(prs, subject, answers, title="Answer Key"):
@@ -917,28 +925,31 @@ def add_answer_key_slides(prs, subject, answers, title="Answer Key"):
 
 def add_quiz_item_body(slide, question, choices, ink):
     """
-    Render question + choices inside ONE text box so they can never overlap.
-    All text is left-aligned.
+    Render a quiz item in one text box:
+    - the numbered question is bold
+    - choices are regular
+    - every question and choice is left-aligned
+    - one box prevents question/choice overlap
     """
     size = quiz_font_size(question, choices)
 
     box = slide.shapes.add_textbox(
-        Inches(.95), Inches(1.55), Inches(11.05), Inches(4.95)
+        Inches(.95), Inches(1.05), Inches(11.05), Inches(5.55)
     )
     tf = box.text_frame
     tf.clear()
     tf.word_wrap = True
-    tf.margin_left = Inches(.02)
-    tf.margin_right = Inches(.02)
-    tf.margin_top = Inches(.02)
-    tf.margin_bottom = Inches(.02)
+    tf.margin_left = Inches(.04)
+    tf.margin_right = Inches(.04)
+    tf.margin_top = Inches(.04)
+    tf.margin_bottom = Inches(.04)
 
     p = tf.paragraphs[0]
     p.text = question
     p.alignment = PP_ALIGN.LEFT
-    p.space_after = Pt(max(8, size * .28))
+    p.space_after = Pt(max(8, size * .30))
     for r in p.runs:
-        style_run(r, size, False, ink)
+        style_run(r, size, True, ink)
 
     for choice in choices or []:
         p = tf.add_paragraph()
@@ -1023,37 +1034,75 @@ def build_lesson_ppt(plan, data, include_visuals):
     out.seek(0)
     return out
 
-def build_quiz_ppt(title, year, subject, assessment_type, items):
+def default_quiz_instruction(assessment_type):
+    if assessment_type == "Multiple Choice":
+        return "Read each question carefully. Choose the letter of the best answer."
+    if assessment_type == "True or False":
+        return "Read each statement carefully. Decide whether it is True or False."
+    return "Read each question carefully and write the correct answer."
+
+
+def build_quiz_ppt(title, year, subject, assessment_type, items, instruction_text=""):
     prs=Presentation()
     prs.slide_width=Inches(13.333)
     prs.slide_height=Inches(7.5)
 
+    # Slide 1: clean cover only
     slide,accent,soft,ink=base_slide(prs,subject)
-    textbox(slide,title,Inches(1),Inches(1.35),Inches(11.2),Inches(1.6),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
     textbox(
-        slide,
-        f"{subject} {year}",
+        slide, title,
+        Inches(1), Inches(1.55), Inches(11.2), Inches(1.45),
+        58, True, accent, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
+    )
+    textbox(
+        slide, f"{subject} {year}",
         Inches(1.2), Inches(3.55), Inches(10.8), Inches(1.15),
         45, False, ink, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
     )
 
+    # Slide 2: instructions
+    instruction = (instruction_text or "").strip() or default_quiz_instruction(assessment_type)
+    slide,accent,soft,ink=base_slide(prs,subject)
+    textbox(
+        slide, "Instructions",
+        Inches(.9), Inches(.82), Inches(11.3), Inches(.85),
+        52, True, accent
+    )
+    # Instructions are centered and use the largest safe font possible.
+    # The font reduces only when the instruction is long enough to risk overflow.
+    if len(instruction) <= 90:
+        instruction_size = 54
+    elif len(instruction) <= 160:
+        instruction_size = 50
+    elif len(instruction) <= 240:
+        instruction_size = 45
+    elif len(instruction) <= 340:
+        instruction_size = 40
+    elif len(instruction) <= 460:
+        instruction_size = 36
+    else:
+        instruction_size = 32
+
+    textbox(
+        slide, instruction,
+        Inches(1.0), Inches(1.85), Inches(10.9), Inches(4.0),
+        instruction_size, False, ink, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE
+    )
+
     answer_entries = []
 
+    # Slide 3 onward: question slides. No "Item 1" heading.
     for item in items:
         slide,accent,soft,ink=base_slide(prs,subject)
-        textbox(
-            slide, f"Item {item['number']}",
-            Inches(.9), Inches(.68), Inches(11.2), Inches(.72),
-            48, True, accent
-        )
-        # Use one text box for both question and choices to avoid overlap.
+
+        # The question already begins with its item number, e.g. "8. What is runoff?"
         add_quiz_item_body(slide, item["question"], item["choices"], ink)
 
         answer = item["answer"] or "Not provided"
         add_note(slide, "Teacher Answer: " + answer)
         answer_entries.append((item["number"], answer))
 
-    # Add a complete answer key at the end.
+    # Complete answer key at the end.
     add_answer_key_slides(prs, subject, answer_entries, "Answer Key")
 
     out=io.BytesIO()
@@ -1193,10 +1242,16 @@ else:
         with c3:
             quiz_subject=st.selectbox("Subject *",list(THEMES.keys()),key="quiz_subject")
 
-        section(2,"Assessment Type","Choose the format of the questions you will paste.")
+        section(2,"Assessment Type and Instructions","Choose the assessment type. You may also customize the instruction slide.")
         quiz_type=st.selectbox(
             "Assessment Type",
             ["Multiple Choice","True or False","Identification / Short Answer"]
+        )
+        quiz_instruction=st.text_area(
+            "Quiz Instructions (Optional)",
+            placeholder="Example: Read each question carefully. Choose the letter of the best answer.",
+            height=95,
+            help="If left blank, SlideCraft creates a simple instruction based on the assessment type."
         )
 
         section(3,"Paste Quiz Questions","Separate each item with a blank line. You may put answers after each item OR add one Answer Key at the very end. SlideCraft uses those answers first. AI is used only for items that still have no answer.")
@@ -1237,7 +1292,8 @@ else:
             quiz_year.strip(),
             quiz_subject,
             quiz_type,
-            items
+            items,
+            quiz_instruction.strip()
         )
         safe=re.sub(r"[^A-Za-z0-9_-]+","_",quiz_title).strip("_") or "quiz"
         st.success(f"Your quiz PowerPoint is ready with {len(items)} item slide(s).")
