@@ -387,6 +387,52 @@ def call_gemini(key, prompt):
             errs.append(f"{model}:{type(e).__name__}")
     raise RuntimeError("Gemini generation failed: " + " | ".join(errs[:4]))
 
+
+def fill_missing_quiz_answers_with_ai(key, assessment_type, items):
+    """Use Gemini to answer only quiz items whose answers were not supplied."""
+    missing = [
+        {
+            "number": item["number"],
+            "question": item["question"],
+            "choices": item.get("choices", [])
+        }
+        for item in items
+        if not (item.get("answer") or "").strip()
+    ]
+    if not missing or not key:
+        return items
+
+    prompt = f"""
+You are checking a teacher-created quiz.
+
+Determine the correct answer ONLY for the items whose answers are missing.
+Assessment type: {assessment_type}
+
+Rules:
+- Use the question and choices exactly as provided.
+- For multiple choice, return the correct choice letter AND answer text when possible.
+- For True/False, return True or False.
+- For identification/short answer, give a concise correct answer.
+- Do not rewrite the questions.
+- Return ONLY valid JSON in this form:
+{{"answers":[{{"number":1,"answer":"B. Evaporation"}}]}}
+
+Items:
+{json.dumps(missing, ensure_ascii=False)}
+"""
+    result = call_gemini(key, prompt)
+    answer_map = {
+        int(x["number"]): str(x["answer"]).strip()
+        for x in result.get("answers", [])
+        if "number" in x and "answer" in x
+    }
+
+    for item in items:
+        if not (item.get("answer") or "").strip():
+            item["answer"] = answer_map.get(item["number"], "")
+    return items
+
+
 # =========================================================
 # LESSON GENERATION
 # =========================================================
@@ -529,7 +575,13 @@ A. Evaporation
 B. Collection
 C. Condensation
 D. Runoff
-Answer: C"""
+Answer: C
+
+You may also omit the Answer lines above and place this at the very end:
+
+Answer Key
+1. B
+2. C"""
     if assessment_type == "True or False":
         return """1. Evaporation is caused by heat.
 Answer: True
@@ -542,15 +594,71 @@ Answer: Condensation
 2. Name one form of precipitation.
 Answer: Rain"""
 
+def extract_answer_key(text):
+    """
+    Detect an answer-key section placed at the end of the teacher's pasted quiz.
+    Supports examples such as:
+      Answer Key
+      1. B
+      2. C
+      3. True
+
+      ANSWERS:
+      1-B
+      2-C
+      3-False
+    Returns (question_text_without_key, {item_number: answer}).
+    """
+    pattern = re.compile(
+        r"(?im)^\s*(?:answer\s*key|answers?)\s*:?\s*$"
+    )
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return text, {}
+
+    # Use the LAST answer-key heading so an "Answer:" inside an item is not mistaken for the key.
+    m = matches[-1]
+    quiz_part = text[:m.start()].rstrip()
+    key_part = text[m.end():].strip()
+
+    answer_map = {}
+    for line in key_part.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        # 1. B / 1) B / 1-B / 1: B
+        mm = re.match(r"^(\d+)\s*[\.\)\-:]\s*(.+?)\s*$", line)
+        if mm:
+            answer_map[int(mm.group(1))] = mm.group(2).strip()
+            continue
+
+        # 1 B (fallback)
+        mm = re.match(r"^(\d+)\s+(.+?)\s*$", line)
+        if mm:
+            answer_map[int(mm.group(1))] = mm.group(2).strip()
+
+    return quiz_part, answer_map
+
+
 def parse_quiz(text, assessment_type):
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
+    question_text, final_answer_key = extract_answer_key(text)
+
+    blocks = [
+        b.strip()
+        for b in re.split(r"\n\s*\n", question_text.strip())
+        if b.strip()
+    ]
+
     items = []
-    for idx, block in enumerate(blocks,1):
+    for idx, block in enumerate(blocks, 1):
         lines = [x.strip() for x in block.splitlines() if x.strip()]
         answer = ""
         visible = []
+
         for line in lines:
             if re.match(r"(?i)^answer\s*:", line):
+                # Per-item answer has priority over the final answer key.
                 answer = re.sub(r"(?i)^answer\s*:\s*", "", line).strip()
             else:
                 visible.append(line)
@@ -559,23 +667,32 @@ def parse_quiz(text, assessment_type):
             continue
 
         question = visible[0]
-        if not re.match(r"^\d+[\.\)]", question):
-            question = f"{idx}. {question}"
+        number_match = re.match(r"^(\d+)[\.\)]\s*(.*)$", question)
+        if number_match:
+            item_number = int(number_match.group(1))
+            question = f"{item_number}. {number_match.group(2).strip()}"
+        else:
+            item_number = idx
+            question = f"{item_number}. {question}"
 
         choices = []
         if assessment_type == "Multiple Choice":
             choices = visible[1:]
         else:
-            # Keep any extra prompt lines as part of the question.
             if len(visible) > 1:
                 question += "\n" + "\n".join(visible[1:])
 
+        # If no per-item answer was supplied, use the final Answer Key.
+        if not answer:
+            answer = final_answer_key.get(item_number, "")
+
         items.append({
-            "number": idx,
+            "number": item_number,
             "question": question,
             "choices": choices,
             "answer": answer
         })
+
     return items
 
 # =========================================================
@@ -729,16 +846,25 @@ def add_visual(slide, image_bytes, accent):
         pass
 
 def quiz_font_size(question, choices):
-    total = len(question) + sum(len(x) for x in choices)
-    if total <= 260:
+    """
+    Start at 45 pt. Reduce only when necessary so ONE quiz item fits one slide.
+    Uses both character count and estimated line count.
+    """
+    text_parts = [question] + list(choices or [])
+    total_chars = sum(len(x) for x in text_parts)
+    estimated_lines = sum(max(1, (len(x) + 54) // 55) for x in text_parts)
+
+    if total_chars <= 250 and estimated_lines <= 7:
         return 45
-    if total <= 360:
+    if total_chars <= 340 and estimated_lines <= 9:
         return 40
-    if total <= 500:
+    if total_chars <= 440 and estimated_lines <= 11:
         return 36
-    if total <= 680:
+    if total_chars <= 560 and estimated_lines <= 13:
         return 32
-    return 28
+    if total_chars <= 720 and estimated_lines <= 16:
+        return 28
+    return 24
 
 
 def add_answer_key_slides(prs, subject, answers, title="Answer Key"):
@@ -789,6 +915,42 @@ def add_answer_key_slides(prs, subject, answers, title="Answer Key"):
             for r in p.runs:
                 style_run(r, 45, False, ink)
 
+def add_quiz_item_body(slide, question, choices, ink):
+    """
+    Render question + choices inside ONE text box so they can never overlap.
+    All text is left-aligned.
+    """
+    size = quiz_font_size(question, choices)
+
+    box = slide.shapes.add_textbox(
+        Inches(.95), Inches(1.55), Inches(11.05), Inches(4.95)
+    )
+    tf = box.text_frame
+    tf.clear()
+    tf.word_wrap = True
+    tf.margin_left = Inches(.02)
+    tf.margin_right = Inches(.02)
+    tf.margin_top = Inches(.02)
+    tf.margin_bottom = Inches(.02)
+
+    p = tf.paragraphs[0]
+    p.text = question
+    p.alignment = PP_ALIGN.LEFT
+    p.space_after = Pt(max(8, size * .28))
+    for r in p.runs:
+        style_run(r, size, False, ink)
+
+    for choice in choices or []:
+        p = tf.add_paragraph()
+        p.text = choice
+        p.alignment = PP_ALIGN.LEFT
+        p.space_after = Pt(max(5, size * .16))
+        for r in p.runs:
+            style_run(r, size, False, ink)
+
+    return size
+
+
 def build_lesson_ppt(plan, data, include_visuals):
     prs=Presentation()
     prs.slide_width=Inches(13.333)
@@ -823,19 +985,9 @@ def build_lesson_ppt(plan, data, include_visuals):
             )
             q=s.get("question","").strip()
             choices=s.get("choices",[]) or []
-            size=45
-            textbox(
-                slide, q,
-                Inches(.95), Inches(1.55), Inches(11.0), Inches(1.65),
-                size, False, ink, PP_ALIGN.LEFT
-            )
-            if choices:
-                ctext="\n".join(choices)
-                textbox(
-                    slide, ctext,
-                    Inches(1.05), Inches(3.15), Inches(10.8), Inches(2.95),
-                    45, False, ink, PP_ALIGN.LEFT
-                )
+
+            # Question and choices share one box, so they cannot overlap.
+            add_quiz_item_body(slide, q, choices, ink)
 
             answer_text = (s.get("answer_note","") or "").strip()
             add_note(slide, answer_text)
@@ -894,22 +1046,11 @@ def build_quiz_ppt(title, year, subject, assessment_type, items):
             Inches(.9), Inches(.68), Inches(11.2), Inches(.72),
             48, True, accent
         )
-        size=quiz_font_size(item["question"],item["choices"])
-        textbox(
-            slide, item["question"],
-            Inches(.95), Inches(1.48), Inches(11.1), Inches(1.75),
-            size, False, ink, PP_ALIGN.LEFT
-        )
-        if item["choices"]:
-            choice_size=min(45,size)
-            textbox(
-                slide, "\n".join(item["choices"]),
-                Inches(1.05), Inches(3.10), Inches(10.8), Inches(3.0),
-                choice_size, False, ink, PP_ALIGN.LEFT
-            )
+        # Use one text box for both question and choices to avoid overlap.
+        add_quiz_item_body(slide, item["question"], item["choices"], ink)
 
         answer = item["answer"] or "Not provided"
-        add_note(slide, "Answer: " + answer)
+        add_note(slide, "Teacher Answer: " + answer)
         answer_entries.append((item["number"], answer))
 
     # Add a complete answer key at the end.
@@ -1041,7 +1182,7 @@ if mode == "Full Lesson to PPT":
 # =========================================================
 else:
     with st.form("quiz_form"):
-        st.markdown('<div class="tip"><b>Quiz mode:</b> one item per slide. Multiple-choice slides show the item number, complete question, and choices. The correct answer is saved in the speaker notes, and a complete Answer Key is also added at the end of the PowerPoint.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="tip"><b>Quiz mode:</b> one item per slide. If you paste an Answer Key at the end, SlideCraft automatically matches each answer to its item and puts it in the speaker notes. AI answers only items that still have no provided answer. A complete Answer Key is also added at the end of the PowerPoint.</div>',unsafe_allow_html=True)
 
         section(1,"Quiz Information","Only the quiz title, year level, and subject are needed.")
         c1,c2,c3=st.columns(3)
@@ -1058,7 +1199,7 @@ else:
             ["Multiple Choice","True or False","Identification / Short Answer"]
         )
 
-        section(3,"Paste Quiz Questions","Separate each item with a blank line. Include an Answer line so the teacher answer is saved in the slide notes.")
+        section(3,"Paste Quiz Questions","Separate each item with a blank line. You may put answers after each item OR add one Answer Key at the very end. SlideCraft uses those answers first. AI is used only for items that still have no answer.")
         quiz_text=st.text_area(
             "Quiz Questions *",
             placeholder=quiz_placeholder(quiz_type),
@@ -1076,6 +1217,20 @@ else:
         if not items:
             st.error("No quiz items could be read. Please follow the sample format shown in the question box.")
             st.stop()
+
+        # If the teacher did not provide an answer, let AI determine it.
+        # The answer is then placed in the item's speaker notes and in the final answer key.
+        missing_before = sum(1 for item in items if not (item.get("answer") or "").strip())
+        if missing_before:
+            key = api_key()
+            if key:
+                try:
+                    with st.spinner("Checking missing quiz answers..."):
+                        items = fill_missing_quiz_answers_with_ai(key, quiz_type, items)
+                except Exception:
+                    st.warning("Some missing answers could not be determined by AI. Please review those items.")
+            else:
+                st.warning("Some quiz answers are missing and AI is unavailable. Please provide the missing answers.")
 
         ppt=build_quiz_ppt(
             quiz_title.strip(),
