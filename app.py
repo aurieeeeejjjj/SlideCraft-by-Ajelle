@@ -184,6 +184,44 @@ section[data-testid="stSidebar"] * {{
   color:#543667;
   margin-bottom:12px;
 }}
+.mode-card {{
+  background:rgba(255,255,255,.97);
+  border:1px solid #dfcff0;
+  border-radius:18px;
+  padding:16px 20px 12px;
+  box-shadow:0 10px 28px rgba(31,8,60,.16);
+  margin:0 0 8px;
+}}
+.mode-title {{
+  color:#4b126f;
+  font-weight:800;
+  font-size:1.15rem;
+  margin-bottom:4px;
+}}
+.mode-sub {{
+  color:#6a5875;
+  font-size:.94rem;
+}}
+div[data-testid="stRadio"] {{
+  background:rgba(255,255,255,.97)!important;
+  border:1px solid #e3d4f1!important;
+  border-radius:16px!important;
+  padding:10px 16px!important;
+  margin-bottom:18px!important;
+  box-shadow:0 8px 22px rgba(31,8,60,.12)!important;
+}}
+div[data-testid="stRadio"] label {{
+  background:#f8f2fc!important;
+  border:1px solid #d8bde9!important;
+  border-radius:12px!important;
+  padding:10px 14px!important;
+  margin-right:10px!important;
+}}
+div[data-testid="stRadio"] label span {{
+  color:#351943!important;
+  -webkit-text-fill-color:#351943!important;
+  font-weight:750!important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -200,6 +238,8 @@ with st.sidebar:
     st.write("Quiz slides start at 45 pt and shrink only when one long item must fit on a single slide.")
     st.markdown("---")
     st.caption("Simple inputs. Teacher-ready output.")
+    st.markdown("---")
+    st.markdown("**Created by @Aurieeeejjjj**")
 
 st.markdown("""
 <div class="hero">
@@ -211,10 +251,18 @@ and arranges the slides so the text stays readable.</p>
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<div class="mode-card">
+  <div class="mode-title">Choose what you want to create</div>
+  <div class="mode-sub">Select one option below. You can create a complete lesson presentation or a quiz-only PowerPoint.</div>
+</div>
+""", unsafe_allow_html=True)
+
 mode = st.radio(
-    "What would you like to create?",
+    "Generator Mode",
     ["Full Lesson to PPT", "Quiz to PPT Only"],
-    horizontal=True
+    horizontal=True,
+    label_visibility="collapsed"
 )
 
 def section(n, title, note):
@@ -645,12 +693,37 @@ def commons_image(query):
 
 def add_visual(slide, image_bytes, accent):
     try:
-        im=Image.open(image_bytes).convert("RGB")
-        tmp=tempfile.NamedTemporaryFile(suffix=".jpg",delete=False)
-        im.save(tmp.name,"JPEG",quality=90)
-        frame=slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE,Inches(8.68),Inches(1.92),Inches(3.62),Inches(3.65))
-        frame.fill.solid();frame.fill.fore_color.rgb=WHITE;frame.line.color.rgb=accent
-        slide.shapes.add_picture(tmp.name,Inches(8.84),Inches(2.08),width=Inches(3.30),height=Inches(3.32))
+        im = Image.open(image_bytes).convert("RGB")
+        max_w_px, max_h_px = 1000, 800
+        im.thumbnail((max_w_px, max_h_px))
+        tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        im.save(tmp.name, "JPEG", quality=90)
+
+        frame_left, frame_top = Inches(8.68), Inches(1.92)
+        frame_w, frame_h = Inches(3.62), Inches(3.65)
+
+        frame = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            frame_left, frame_top, frame_w, frame_h
+        )
+        frame.fill.solid()
+        frame.fill.fore_color.rgb = WHITE
+        frame.line.color.rgb = accent
+
+        img_w, img_h = im.size
+        box_w, box_h = 3.30, 3.32
+        ratio = min(box_w / img_w, box_h / img_h)
+        draw_w = img_w * ratio
+        draw_h = img_h * ratio
+
+        left = 8.84 + (box_w - draw_w) / 2
+        top = 2.08 + (box_h - draw_h) / 2
+
+        slide.shapes.add_picture(
+            tmp.name,
+            Inches(left), Inches(top),
+            width=Inches(draw_w), height=Inches(draw_h)
+        )
         os.unlink(tmp.name)
     except Exception:
         pass
@@ -681,7 +754,7 @@ def build_lesson_ppt(plan, data, include_visuals):
 
         if s.get("kind")=="cover":
             textbox(slide,data["title"],Inches(1),Inches(1.35),Inches(11.2),Inches(1.55),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
-            textbox(slide,f'{data["subject"]}\n{data["year_level"]}',Inches(1.3),Inches(3.45),Inches(10.6),Inches(1.5),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+            textbox(slide,f'{data["subject"]}\n{data["year_level"]}\nCreated with SlideCraft-by-Ajelle • @Aurieeeejjjj',Inches(1.3),Inches(3.15),Inches(10.6),Inches(2.0),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
             continue
 
         if s.get("kind")=="assessment":
@@ -698,7 +771,10 @@ def build_lesson_ppt(plan, data, include_visuals):
 
         textbox(slide,s.get("title","Lesson"),Inches(.9),Inches(.68),Inches(11.3),Inches(.78),48,True,accent)
 
-        img = commons_image(s.get("visual_query","")) if include_visuals and s.get("visual_query") else None
+        visual_query = (s.get("visual_query") or "").strip()
+        if include_visuals and not visual_query and s.get("kind") in ("content", "activity"):
+            visual_query = f'{data["title"]} {s.get("title","lesson concept")}'
+        img = commons_image(visual_query) if include_visuals and visual_query else None
         text_w=Inches(7.1) if img else Inches(11.0)
         box=slide.shapes.add_textbox(Inches(.95),Inches(1.65),text_w,Inches(4.95))
         tf=box.text_frame
@@ -726,7 +802,7 @@ def build_quiz_ppt(title, year, subject, assessment_type, items):
 
     slide,accent,soft,ink=base_slide(prs,subject)
     textbox(slide,title,Inches(1),Inches(1.35),Inches(11.2),Inches(1.6),58,True,accent,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
-    textbox(slide,f"{subject}\n{year}\n{assessment_type}",Inches(1.2),Inches(3.45),Inches(10.8),Inches(1.8),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
+    textbox(slide,f"{subject}\n{year}\n{assessment_type}\nCreated with SlideCraft-by-Ajelle • @Aurieeeejjjj",Inches(1.2),Inches(3.10),Inches(10.8),Inches(2.25),45,False,ink,PP_ALIGN.CENTER,MSO_ANCHOR.MIDDLE)
 
     for item in items:
         slide,accent,soft,ink=base_slide(prs,subject)
@@ -915,3 +991,19 @@ else:
             f"{safe}_SlideCraft_Quiz.pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation"
         )
+
+
+st.markdown("""
+<div style="
+    margin-top:24px;
+    padding:14px 18px;
+    border-radius:14px;
+    background:rgba(255,255,255,.94);
+    border:1px solid #e2d2f0;
+    text-align:center;
+    color:#4d2863;
+    font-weight:700;">
+    SlideCraft-by-Ajelle • Created by @Aurieeeejjjj
+</div>
+""", unsafe_allow_html=True)
+
